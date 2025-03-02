@@ -37,7 +37,7 @@ SERVER_PID=$!
 
 # Wait for the server to be up
 echo "Waiting for server to start..."
-until curl -s http://localhost:8080 > /dev/null; do
+until curl -s http://localhost:8080; do
   echo -n "."
   sleep 0.05
 done

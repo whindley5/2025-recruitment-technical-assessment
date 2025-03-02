@@ -19,8 +19,10 @@ interface ingredient extends cookbookEntry {
   cookTime: number;
 }
 
-interface recipeSummary extends recipe {
+interface recipeSummary {
+  name: string;
   cookTime: number;
+  ingredients: requiredItem[];
 }
 
 // =============================================================================
@@ -86,43 +88,80 @@ app.post("/entry", (req: Request, res: Response) => {
     }
   }
   if (entry.type === "recipe") {
+    if (!entry.hasOwnProperty("requiredItems")) {
+      res.status(400).send("Missing requiredItems");
+      return;
+    }
     const set = new Set();
     for (const i of entry.requiredItems) {
-      if (set.has(i.name)) {
+      if (set.has(i.name) || i.type === "recipe") {
         res.status(400).send("Duplicate requiredItems");
         return;
       }
       set.add(i.name);
     }
   }
-  cookbookEntries.forEach(e => {
-    e.name === entry.name ? res.status(400).send("Entry already exists") : null;
-  });
+  for (const e of cookbookEntries) {
+    if (e.name === entry.name) {
+      res.status(400).send("Entry already exists");
+      return;
+    }
+  }
   cookbookEntries.push(entry);
   res.status(200).send(); 
 });
 
 // [TASK 3] ====================================================================
 // Endpoint that returns a summary of a recipe that corresponds to a query name
-app.get("/summary", (req:Request, res:Request) => {
-  let name = req.query.name;
-  let sum:recipeSummary;
-  let entry = cookbookEntries.find(e => e.name === name);
-  if (entry === undefined) {
-    res.status(400).send();
+app.get("/summary", (req: Request, res: Response) => {
+  let name = req.query.name as string;
+  if (!name) {
+    res.status(400).send("Name query parameter is required");
     return;
   }
-  if (entry.type === "ingredient") {
-    res.status(400).send();
-    return;
-  }
-  let requiredItems = entry.name.requiredItems;
-  let ret = "";
-  requiredItems.forEach(i => {
-    ret += `${i.name} x${i.quantity}, `;
-  }
-  );
-  res.status(200).send(ret);
+
+  let recipeSummary: recipeSummary = {
+    name: name,
+    cookTime: 0,
+    ingredients: []
+  };
+
+  // Recursively go through recipes and add up cookTime and ingredients
+  const x = (name: string, recipeSummary: recipeSummary) => {
+    const r = cookbookEntries.find(e => e.name === name) as recipe;
+    if (r === undefined || r.type === "ingredient") {
+      res.status(400).send("Recipe not found");
+      return;
+    }
+
+    for (const a of r.requiredItems) {
+      const ingredient = cookbookEntries.find(e => e.name === a.name) as ingredient | recipe;
+      if (ingredient === undefined) {
+        res.status(400).send("Ingredient not found");
+        return;
+      }
+
+      // Kinda cooked naming them all ingredient ngl but its metaphorical
+      if (ingredient.type === "ingredient") {
+        recipeSummary.cookTime += (ingredient as ingredient).cookTime * a.quantity;
+        let j = recipeSummary.ingredients.find(e => e.name === ingredient.name);
+        if (j === undefined) {
+          recipeSummary.ingredients.push({
+            name: ingredient.name,
+            quantity: a.quantity
+          } as requiredItem);
+        } else {
+          j.quantity += a.quantity;
+        }
+      }
+      if (ingredient.type === "recipe") {
+        x(ingredient.name, recipeSummary);
+      }
+    }
+  };
+
+  x(name, recipeSummary);
+  res.status(200).json(recipeSummary);
 });
 
 // =============================================================================
